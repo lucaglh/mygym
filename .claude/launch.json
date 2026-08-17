@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mygym",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/luca/Desktop/Personal/codex/myGym/dev-server.py", "8517"],
+      "port": 8517
+    }
+  ]
+}

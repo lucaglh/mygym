@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>MyGym</title>
+  <meta name="description" content="Trainingsplan, Satz-Tracking und Fortschritt fürs Gym – kostenlos und offline.">
   <meta name="theme-color" content="#0d0d0d">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -17,8 +18,13 @@
 <body>
 
   <header id="topbar">
-    <h1 id="topbar-title">Training</h1>
-    <span id="topbar-meta"></span>
+    <h1 id="topbar-title">Start</h1>
+    <div class="topbar-right">
+      <span id="topbar-meta"></span>
+      <button class="icon-btn" id="open-settings" aria-label="Einstellungen">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56h.08a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08A1.7 1.7 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
   </header>
 
   <main id="view"></main>
@@ -27,20 +33,20 @@
     <div class="rt-progress"><div class="rt-bar" id="rt-bar"></div></div>
     <div class="rt-row">
       <div class="rt-info">
-        <span class="rt-label">Pause</span>
+        <span class="rt-label" id="rt-label">Pause</span>
         <span class="rt-time" id="rt-time">1:30</span>
       </div>
       <div class="rt-actions">
         <button class="btn-ghost" id="rt-plus">+30 s</button>
-        <button class="btn-ghost" id="rt-skip">Überspringen</button>
+        <button class="btn-ghost" id="rt-skip">Weiter</button>
       </div>
     </div>
   </div>
 
   <nav id="tabbar">
-    <button class="tab" data-tab="workout" aria-label="Training">
+    <button class="tab" data-tab="home" aria-label="Start">
       <svg viewBox="0 0 24 24"><path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-      <span>Training</span>
+      <span>Start</span>
     </button>
     <button class="tab" data-tab="plan" aria-label="Plan">
       <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
@@ -56,18 +62,20 @@
     </button>
   </nav>
 
+  <!-- Übung anlegen/bearbeiten -->
   <dialog id="exercise-dialog">
     <form method="dialog" id="exercise-form">
       <h2 id="exdlg-title">Übung bearbeiten</h2>
       <label>Name
-        <input type="text" id="exdlg-name" required autocomplete="off">
+        <input type="text" id="exdlg-name" list="exercise-names" required autocomplete="off">
       </label>
+      <datalist id="exercise-names"></datalist>
       <div class="form-grid">
         <label>Sätze
           <input type="number" id="exdlg-sets" min="1" max="12" inputmode="numeric" required>
         </label>
         <label>Wdh.
-          <input type="text" id="exdlg-reps" inputmode="numeric" placeholder="z. B. 8 oder 8-12" required>
+          <input type="text" id="exdlg-reps" inputmode="numeric" placeholder="z. B. 8-12" required>
         </label>
         <label>Pause (s)
           <input type="number" id="exdlg-rest" min="0" max="600" step="15" inputmode="numeric">
@@ -76,23 +84,119 @@
       <label>Notizen (Geräteeinstellung, Technik …)
         <textarea id="exdlg-notes" rows="3"></textarea>
       </label>
-      <div class="dialog-actions">
+      <div class="dialog-actions" id="exdlg-actions">
         <button type="button" class="btn-ghost" id="exdlg-cancel">Abbrechen</button>
-        <button type="submit" class="btn-primary" id="exdlg-save">Speichern</button>
+        <button type="submit" class="btn-primary inline" id="exdlg-save">Speichern</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="import-dialog">
-    <h2>Daten importieren</h2>
-    <p class="muted">Füge hier einen zuvor exportierten Datenexport (JSON) ein. Achtung: ersetzt alle aktuellen Daten.</p>
-    <textarea id="import-text" rows="6" placeholder='{"version":1, …}'></textarea>
+  <!-- Einstellungen -->
+  <dialog id="settings-dialog">
+    <h2>Einstellungen</h2>
+    <div class="setting-row">
+      <div class="sr-text">
+        <div class="sr-title">Ton</div>
+        <div class="sr-sub">Signal am Ende der Pause</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="set-sound"><span class="slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div class="sr-text">
+        <div class="sr-title">Vibration</div>
+        <div class="sr-sub">Falls vom Gerät unterstützt</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="set-vibrate"><span class="slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div class="sr-text">
+        <div class="sr-title">Standard-Pause</div>
+        <div class="sr-sub">Für neue Übungen (Sekunden)</div>
+      </div>
+      <input type="number" id="set-rest" min="0" max="600" step="15" inputmode="numeric" class="sr-input">
+    </div>
+    <div class="setting-row">
+      <div class="sr-text">
+        <div class="sr-title">Daten</div>
+        <div class="sr-sub">Backup als JSON</div>
+      </div>
+      <div class="sr-btns">
+        <button class="btn-ghost" id="export-data">Export</button>
+        <button class="btn-ghost" id="import-data">Import</button>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div class="sr-text">
+        <div class="sr-title">Alles zurücksetzen</div>
+        <div class="sr-sub">Plan &amp; Verlauf löschen</div>
+      </div>
+      <button class="btn-ghost btn-danger" id="reset-data">Löschen</button>
+    </div>
+    <p class="muted" style="margin-top:14px;font-size:12px;text-align:center">
+      MyGym · Alle Daten bleiben lokal auf diesem Gerät
+    </p>
     <div class="dialog-actions">
-      <button type="button" class="btn-ghost" id="import-cancel">Abbrechen</button>
-      <button type="button" class="btn-primary" id="import-confirm">Importieren</button>
+      <button type="button" class="btn-primary inline" id="settings-close">Fertig</button>
     </div>
   </dialog>
 
+  <!-- Import -->
+  <dialog id="import-dialog">
+    <h2>Daten importieren</h2>
+    <p class="muted">Füge hier einen MyGym-Export (JSON) ein. Ersetzt alle aktuellen Daten.</p>
+    <textarea id="import-text" rows="6" placeholder='{"version":2, …}'></textarea>
+    <div class="dialog-actions">
+      <button type="button" class="btn-ghost" id="import-cancel">Abbrechen</button>
+      <button type="button" class="btn-primary inline" id="import-confirm">Importieren</button>
+    </div>
+  </dialog>
+
+  <!-- Workout-Zusammenfassung -->
+  <dialog id="summary-dialog">
+    <div class="summary-emoji" id="sum-emoji">🎉</div>
+    <h2 id="sum-title" style="text-align:center">Training abgeschlossen!</h2>
+    <div class="sum-tiles" id="sum-tiles"></div>
+    <div id="sum-prs"></div>
+    <div id="sum-compare"></div>
+    <div class="dialog-actions" style="justify-content:center">
+      <button type="button" class="btn-primary inline" id="summary-close">Stark! 💪</button>
+    </div>
+  </dialog>
+
+  <!-- Generischer Bestätigen-Dialog -->
+  <dialog id="confirm-dialog">
+    <h2 id="cfm-title">Sicher?</h2>
+    <p id="cfm-text" class="muted"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-ghost" id="cfm-cancel">Abbrechen</button>
+      <button type="button" class="btn-primary inline" id="cfm-ok">OK</button>
+    </div>
+  </dialog>
+
+  <!-- Generischer Eingabe-Dialog -->
+  <dialog id="input-dialog">
+    <form method="dialog" id="input-form">
+      <h2 id="inp-title">Eingabe</h2>
+      <label id="inp-label-wrap"><span id="inp-label"></span>
+        <input type="text" id="inp-value" autocomplete="off">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="inp-cancel">Abbrechen</button>
+        <button type="submit" class="btn-primary inline" id="inp-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Aktions-Menü -->
+  <dialog id="sheet-dialog">
+    <h2 id="sheet-title"></h2>
+    <div id="sheet-actions" class="sheet-actions"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn-ghost" id="sheet-cancel" style="width:100%">Abbrechen</button>
+    </div>
+  </dialog>
+
+  <div id="toast-wrap"></div>
   <div id="chart-tooltip" hidden></div>
 
   <script src="app.js"></script>

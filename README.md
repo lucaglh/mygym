@@ -4,26 +4,35 @@ Kostenlose Gym-App fürs iPhone als Ersatz für Bezahl-Apps. Läuft als PWA
 (Progressive Web App) — kein App Store, kein Konto, keine Kosten. Alle Daten
 bleiben lokal auf dem Gerät (localStorage).
 
-## Funktionen
+## Funktionen (v2)
 
-- **Trainingsplan** mit Editor: Trainingstage und Übungen anlegen, bearbeiten,
-  sortieren (Sätze, Wiederholungen, Pausenzeit, Notizen). Beispielplan
+- **Start-Dashboard**: Begrüßung, Wochenübersicht, Wochen-Streak und
+  Trainingsvorschlag per Rotation durch den Plan.
+- **Trainingsplan** mit Editor: Tage anlegen, umbenennen, duplizieren,
+  sortieren, löschen; Übungen mit Sätzen, Wiederholungen, Pausenzeit und
+  Notizen, inkl. Autovervollständigung aus ~40 gängigen Übungen. Beispielplan
   (Push/Pull/Beine) ist vorinstalliert.
-- **Satz-Tracking**: Während des Trainings Gewicht und Wiederholungen eintragen
-  und Sätze abhaken. Werte vom letzten Training werden automatisch vorbelegt.
-- **Pausen-Timer**: Startet automatisch beim Abhaken eines Satzes (pro Übung
-  konfigurierbar), mit Signalton, +30 s und Überspringen.
-- **Verlauf**: Alle Trainings mit Sätzen, Volumen und Dauer.
-- **Statistik**: Gewichtsverlauf pro Übung, Wochenvolumen, Kennzahlen.
-- **Übungs-Notizen**: z. B. Geräteeinstellungen — direkt im Training editierbar.
-- **Export/Import** der Daten als JSON (Backup / Gerätewechsel).
-- Offline-fähig (Service Worker), Bildschirm bleibt während des Trainings an
-  (Wake Lock).
+- **Satz-Tracking**: Werte vom letzten Training vorbelegt („Letztes Mal: …“),
+  Fortschrittsbalken, fertige Übungen klappen automatisch zusammen,
+  Live-🏆-PR-Badge bei neuem Maximalgewicht.
+- **Pausen-Timer**: Startet automatisch beim Abhaken (pro Übung konfigurierbar),
+  zeigt die Übung an, Signalton + Vibration, +30 s, Puls-Animation am Ende.
+- **Zusammenfassung** nach jedem Training: Dauer, Sätze, Volumen, neue
+  Bestleistungen und Volumenvergleich zum letzten gleichen Training.
+- **Verlauf**: Nach Monat gruppiert, aufklappbar, mit Volumen und Dauer.
+- **Statistik**: Aktivitäts-Heatmap (12 Wochen), Übungs-Fortschritt mit
+  Metrik- (Max/e1RM/Volumen) und Zeitraum-Umschalter, Wochenvolumen,
+  Bestwerte-Tabelle (schwerster Satz + geschätztes 1RM) und
+  Körpergewichts-Tracking mit Verlauf.
+- **Einstellungen**: Ton, Vibration, Standard-Pause, Export/Import (JSON),
+  Alles-zurücksetzen.
+- Offline-fähig (Service Worker) mit Update-Hinweis in der App; Bildschirm
+  bleibt während des Trainings an (Wake Lock).
 
 ## Lokal testen
 
 ```bash
-python3 -m http.server 8517 --directory .
+python3 dev-server.py 8517
 ```
 
 Dann <http://localhost:8517> öffnen.

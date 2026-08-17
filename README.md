@@ -9,9 +9,11 @@ bleiben lokal auf dem Gerät (localStorage).
 - **Start-Dashboard**: Begrüßung, Wochenübersicht, Wochen-Streak und
   Trainingsvorschlag per Rotation durch den Plan.
 - **Trainingsplan** mit Editor: Tage anlegen, umbenennen, duplizieren,
-  sortieren, löschen; Übungen mit Sätzen, Wiederholungen, Pausenzeit und
-  Notizen, inkl. Autovervollständigung aus ~40 gängigen Übungen. Beispielplan
-  (Push/Pull/Beine) ist vorinstalliert.
+  sortieren, löschen; Übungen mit Sätzen, Wiederholungen, **Trainingsgewicht**,
+  **Sitzposition**, Pausenzeit und Notizen, inkl. Autovervollständigung aus
+  ~40 gängigen Übungen. Beispielplan (Push/Pull/Beine) ist vorinstalliert.
+- **Übungs-Piktogramme**: 16 gezeichnete SVG-Symbole (Bankdrücken, Kniebeugen,
+  Latzug, Curls …), automatisch per Übungsname zugeordnet, manuell wählbar.
 - **Satz-Tracking**: Werte vom letzten Training vorbelegt („Letztes Mal: …“),
   Fortschrittsbalken, fertige Übungen klappen automatisch zusammen,
   Live-🏆-PR-Badge bei neuem Maximalgewicht.

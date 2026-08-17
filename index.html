@@ -81,7 +81,18 @@
           <input type="number" id="exdlg-rest" min="0" max="600" step="15" inputmode="numeric">
         </label>
       </div>
-      <label>Notizen (Geräteeinstellung, Technik …)
+      <div class="form-grid form-grid-2">
+        <label>Gewicht (kg)
+          <input type="text" id="exdlg-weight" inputmode="decimal" placeholder="z. B. 60">
+        </label>
+        <label>Sitzposition
+          <input type="text" id="exdlg-seat" inputmode="text" placeholder="z. B. 4" autocomplete="off">
+        </label>
+      </div>
+      <label>Symbol
+        <div class="icon-picker" id="exdlg-icons"></div>
+      </label>
+      <label>Notizen (Technik, Griff …)
         <textarea id="exdlg-notes" rows="3"></textarea>
       </label>
       <div class="dialog-actions" id="exdlg-actions">

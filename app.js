@@ -306,6 +306,61 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.activeSession) acquireWakeLock();
 });
 
+/* ---------------- Übungs-Piktogramme ---------------- */
+
+// Strichmännchen-Piktogramme (24×24, stroke=currentColor)
+const ICON_STROKE = 'stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"';
+const EX_ICONS = {
+  bench: { label: 'Bankdrücken', svg: `<circle cx="5" cy="13" r="1.8" ${ICON_STROKE}/><path d="M7.5 14.5h8M3.5 17h17M6 17v3M18 17v3M13 14v-4.5" ${ICON_STROKE}/><path d="M7 9.5h12M8 7.5v4M18 7.5v4" ${ICON_STROKE}/>` },
+  incline: { label: 'Schrägbank', svg: `<circle cx="14.5" cy="7.5" r="1.8" ${ICON_STROKE}/><path d="M4 19L13 10M13 16.5h6M4 19h16M16 9.5V5.5" ${ICON_STROKE}/><path d="M11.5 5h9M13 3v4M19.5 3v4" ${ICON_STROKE}/>` },
+  ohp: { label: 'Schulterdrücken', svg: `<circle cx="12" cy="8.5" r="2" ${ICON_STROKE}/><path d="M12 10.5v6M12 16.5l-2.5 4M12 16.5l2.5 4M9 12.5l-2-2M15 12.5l2-2" ${ICON_STROKE}/><path d="M5 5h14M6.5 3v4M17.5 3v4" ${ICON_STROKE}/>` },
+  latraise: { label: 'Seitheben', svg: `<circle cx="12" cy="5.5" r="2" ${ICON_STROKE}/><path d="M12 7.5v8M12 15.5l-2.5 5M12 15.5l2.5 5M12 10l-6 1M12 10l6 1" ${ICON_STROKE}/><circle cx="4.8" cy="11.4" r="1.1" fill="currentColor"/><circle cx="19.2" cy="11.4" r="1.1" fill="currentColor"/>` },
+  pushdown: { label: 'Kabelzug', svg: `<path d="M17 3v5M14.5 8h5" ${ICON_STROKE}/><circle cx="9.5" cy="7" r="2" ${ICON_STROKE}/><path d="M9.5 9v6.5M9.5 15.5l-2 5M9.5 15.5l2.5 4.5M11 11l3.5 1.5M14.5 12.5l2-3.5" ${ICON_STROKE}/>` },
+  pullup: { label: 'Klimmzug/Latzug', svg: `<path d="M4 4h16" ${ICON_STROKE}/><circle cx="12" cy="9" r="2" ${ICON_STROKE}/><path d="M12 11v5M12 16l-2 4.5M12 16l2 4.5M10 6.5L8.5 4M14 6.5l1.5-2.5" ${ICON_STROKE}/>` },
+  row: { label: 'Rudern', svg: `<circle cx="6.5" cy="7" r="2" ${ICON_STROKE}/><path d="M8 8.5l6 3M14 11.5l4 5M14 11.5l1-5M12 13l-1 4.5M11 17.5h-4" ${ICON_STROKE}/><path d="M9 20h9M10 18.5v3M17 18.5v3" ${ICON_STROKE}/>` },
+  curl: { label: 'Curls', svg: `<circle cx="12" cy="5.5" r="2" ${ICON_STROKE}/><path d="M12 7.5v8M12 15.5l-2.5 5M12 15.5l2.5 5M12 10l-3.5 1.5M8.5 11.5l.5 3.5M12 10l3.5 1.5M15.5 11.5l.5-3.5" ${ICON_STROKE}/><circle cx="9.3" cy="15.8" r="1.1" fill="currentColor"/><circle cx="16.3" cy="7.3" r="1.1" fill="currentColor"/>` },
+  squat: { label: 'Kniebeugen', svg: `<circle cx="11" cy="6" r="2" ${ICON_STROKE}/><path d="M11 8v4l-3.5 2.5L9 19.5M11 12l3.5 2.5L13 19.5M9 19.5H7M13 19.5h2" ${ICON_STROKE}/><path d="M4.5 8.5h13M6 6.5v4M16 6.5v4" ${ICON_STROKE}/>` },
+  legpress: { label: 'Beinpresse', svg: `<path d="M17.5 5l3 3" ${ICON_STROKE}/><path d="M19 3.5l3 3" ${ICON_STROKE}/><circle cx="6" cy="12" r="2" ${ICON_STROKE}/><path d="M7 13.5l4 2.5 4.5-4.5 2.5 2.5M11 16l-5 3.5" ${ICON_STROKE}/>` },
+  deadlift: { label: 'Kreuzheben', svg: `<circle cx="14.5" cy="6.5" r="2" ${ICON_STROKE}/><path d="M13 8l-4 4 1 7.5M9 12l5.5 1-1 6.5M9.5 16.5l-1.5 3M13 9.5l-1.5 6" ${ICON_STROKE}/><path d="M6 20h12M8 18v4M16 18v4" ${ICON_STROKE}/>` },
+  legext: { label: 'Beinstrecker', svg: `<path d="M5 5v11" ${ICON_STROKE}/><circle cx="8" cy="6.5" r="2" ${ICON_STROKE}/><path d="M8 8.5l1 5.5-4 .5M9 14l6 .5 4-3.5" ${ICON_STROKE}/><circle cx="19.8" cy="10.2" r="1.2" fill="currentColor"/>` },
+  legcurl: { label: 'Beincurls', svg: `<path d="M4 16h13" ${ICON_STROKE}/><circle cx="5.5" cy="13" r="1.8" ${ICON_STROKE}/><path d="M7.5 14.5l6 1M13.5 15.5l4.5.5 1.5 3.5" ${ICON_STROKE}/><circle cx="20.1" cy="20.1" r="1.2" fill="currentColor"/>` },
+  calf: { label: 'Wadenheben', svg: `<circle cx="12" cy="4.5" r="1.9" ${ICON_STROKE}/><path d="M12 6.5v7M12 13.5l-1.5 4-.5 2M12 13.5l1.5 4 .5 2M10 19.5l.3-2M14 19.5l-.3-2M9 9.5h6" ${ICON_STROKE}/><path d="M8 21.5h8" ${ICON_STROKE}/>` },
+  core: { label: 'Core/Bauch', svg: `<circle cx="5" cy="11" r="1.9" ${ICON_STROKE}/><path d="M7 12.5l7 1.5 5.5-1M14 14l-1 3M13 17h6" ${ICON_STROKE}/><path d="M3 19.5h18" ${ICON_STROKE}/>` },
+  dumbbell: { label: 'Allgemein', svg: `<path d="M4 10v4M7 8v8M17 8v8M20 10v4M7 12h10" ${ICON_STROKE}/>` },
+};
+
+const ICON_RULES = [
+  [/beincurl|leg ?curl/i, 'legcurl'],
+  [/beinstrecker|leg ?ext/i, 'legext'],
+  [/beinpresse|leg ?press|hip ?thrust/i, 'legpress'],
+  [/kniebeuge|squat|beuge|ausfallschritt|lunge|split ?squat/i, 'squat'],
+  [/kreuzheben|deadlift|rdl|hyperextension/i, 'deadlift'],
+  [/wade|calf/i, 'calf'],
+  [/schräg|incline/i, 'incline'],
+  [/bankdrücken|bench|butterfly|flieg|fly|dips|liegestütz|push.?up/i, 'bench'],
+  [/schulterdrücken|arnold|overhead|military|press/i, 'ohp'],
+  [/seitheben|frontheben|raise/i, 'latraise'],
+  [/trizeps|pushdown|french|überzüge|pullover/i, 'pushdown'],
+  [/klimmzug|pull.?up|latzug|pulldown/i, 'pullup'],
+  [/rudern|row|face ?pull/i, 'row'],
+  [/curl|bizeps|hammer|scott/i, 'curl'],
+  [/plank|crunch|bauch|beinheben|russian|sit.?up|core/i, 'core'],
+];
+
+function autoIconId(name) {
+  for (const [re, id] of ICON_RULES) if (re.test(name)) return id;
+  return 'dumbbell';
+}
+
+function iconIdFor(ex) {
+  return (ex.icon && EX_ICONS[ex.icon]) ? ex.icon : autoIconId(ex.name || '');
+}
+
+function exIconHTML(ex, cls = 'ex-icon') {
+  const id = typeof ex === 'string' ? ex : iconIdFor(ex);
+  return `<span class="${cls}"><svg viewBox="0 0 24 24">${EX_ICONS[id].svg}</svg></span>`;
+}
+
 /* ---------------- Tabs & Rendering ---------------- */
 
 const TITLES = { home: 'MyGym', plan: 'Trainingsplan', history: 'Verlauf', stats: 'Statistik' };
@@ -451,7 +506,8 @@ function startSession(dayId) {
     const sets = [];
     for (let i = 0; i < ex.sets; i++) {
       const prev = last ? last.entry.sets.filter((s) => s.done)[i] || last.entry.sets[i] : null;
-      sets.push({ weight: prev ? prev.weight : 0, reps: prev ? prev.reps : 0, done: false });
+      // Vorbelegung: letztes Training, sonst Plangewicht
+      sets.push({ weight: prev ? prev.weight : (ex.weight || 0), reps: prev ? prev.reps : 0, done: false });
     }
     return { exId: ex.id, name: ex.name, targetReps: ex.reps, restSec: ex.restSec ?? state.settings.defaultRestSec, sets };
   });
@@ -549,12 +605,16 @@ function renderActiveSession(view) {
     });
 
     const notesOpen = openNotes.has(entry.exId);
+    const targetW = planEx && planEx.weight ? ` · ${fmtW(planEx.weight)} kg` : '';
+    const seatChip = planEx && planEx.seat
+      ? `<span class="seat-chip">🪑 Sitz ${esc(planEx.seat)}</span>` : '';
     html += `
       <div class="card exercise-card ${allDone ? 'done-all' : ''}">
         <div class="ex-head">
-          <div style="flex:1">
+          ${exIconHTML(planEx || entry)}
+          <div style="flex:1;min-width:0">
             <div class="ex-name">${esc(entry.name)}${prBadge}</div>
-            <div class="ex-target">Ziel: ${entry.sets.length} × ${esc(entry.targetReps)} Wdh. · Pause ${fmtClock(entry.restSec)}</div>
+            <div class="ex-target">Ziel: ${entry.sets.length} × ${esc(entry.targetReps)}${targetW} · Pause ${fmtClock(entry.restSec)} ${seatChip}</div>
             ${lastHint}
           </div>
           <span class="ex-progress ${allDone ? 'all' : ''}">${doneCnt}/${entry.sets.length}</span>
@@ -818,12 +878,21 @@ function renderPlan(view) {
   state.plan.days.forEach((day, di) => {
     let rows = '';
     day.exercises.forEach((ex, i) => {
+      const extras = [
+        `${ex.sets} × ${esc(ex.reps)}`,
+        ex.weight ? `${fmtW(ex.weight)} kg` : null,
+        `Pause ${fmtClock(ex.restSec ?? state.settings.defaultRestSec)}`,
+        ex.seat ? `Sitz ${esc(ex.seat)}` : null,
+      ].filter(Boolean).join(' · ');
       rows += `
         <div class="plan-ex-row">
           <button class="pe-info" data-edit-ex="${day.id}:${ex.id}">
-            <div class="pe-name">${esc(ex.name)}</div>
-            <div class="pe-sub">${ex.sets} × ${esc(ex.reps)} Wdh. · Pause ${fmtClock(ex.restSec ?? state.settings.defaultRestSec)}</div>
-            ${ex.notes ? `<div class="pe-note">📝 ${esc(ex.notes)}</div>` : ''}
+            ${exIconHTML(ex, 'ex-icon pe-icon')}
+            <span class="pe-text">
+              <span class="pe-name">${esc(ex.name)}</span>
+              <span class="pe-sub">${extras}</span>
+              ${ex.notes ? `<span class="pe-note">📝 ${esc(ex.notes)}</span>` : ''}
+            </span>
           </button>
           <button class="icon-btn" data-move="${day.id}:${ex.id}:-1" aria-label="Nach oben" ${i === 0 ? 'disabled style="opacity:.25"' : ''}>
             <svg viewBox="0 0 24 24"><path d="M6 14l6-6 6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
@@ -910,6 +979,28 @@ function moveExercise(dayId, exId, dir) {
   save(); render();
 }
 
+let dlgIconChoice = null; // null = automatisch
+
+function renderIconPicker(name) {
+  const wrap = $('#exdlg-icons');
+  const autoId = autoIconId(name || '');
+  let html = `
+    <button type="button" class="ip-btn ${dlgIconChoice === null ? 'on' : ''}" data-ip="auto" title="Automatisch">
+      ${exIconHTML(autoId, 'ex-icon ip-icon')}<span>Auto</span>
+    </button>`;
+  for (const id of Object.keys(EX_ICONS)) {
+    html += `
+      <button type="button" class="ip-btn ${dlgIconChoice === id ? 'on' : ''}" data-ip="${id}" title="${EX_ICONS[id].label}">
+        ${exIconHTML(id, 'ex-icon ip-icon')}
+      </button>`;
+  }
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.ip-btn').forEach((b) => b.addEventListener('click', () => {
+    dlgIconChoice = b.dataset.ip === 'auto' ? null : b.dataset.ip;
+    renderIconPicker($('#exdlg-name').value);
+  }));
+}
+
 function openExerciseDialog(dayId, exId) {
   editingEx = { dayId, exId };
   refreshExerciseNames();
@@ -920,7 +1011,11 @@ function openExerciseDialog(dayId, exId) {
   $('#exdlg-sets').value = ex ? ex.sets : 3;
   $('#exdlg-reps').value = ex ? ex.reps : '10';
   $('#exdlg-rest').value = ex ? (ex.restSec ?? state.settings.defaultRestSec) : state.settings.defaultRestSec;
+  $('#exdlg-weight').value = ex && ex.weight ? fmtW(ex.weight) : '';
+  $('#exdlg-seat').value = ex ? (ex.seat || '') : '';
   $('#exdlg-notes').value = ex ? ex.notes : '';
+  dlgIconChoice = ex && ex.icon && EX_ICONS[ex.icon] ? ex.icon : null;
+  renderIconPicker(ex ? ex.name : '');
   let delBtn = $('#exdlg-delete');
   if (delBtn) delBtn.remove();
   if (ex) {
@@ -951,6 +1046,9 @@ $('#exercise-form').addEventListener('submit', () => {
     sets: Math.max(1, parseInt($('#exdlg-sets').value, 10) || 3),
     reps: $('#exdlg-reps').value.trim() || '10',
     restSec: Math.max(0, parseInt($('#exdlg-rest').value, 10) || state.settings.defaultRestSec),
+    weight: parseNum($('#exdlg-weight').value) || 0,
+    seat: $('#exdlg-seat').value.trim(),
+    icon: dlgIconChoice,
     notes: $('#exdlg-notes').value.trim(),
   };
   if (!data.name) return;
@@ -963,6 +1061,10 @@ $('#exercise-form').addEventListener('submit', () => {
 });
 
 $('#exdlg-cancel').addEventListener('click', () => $('#exercise-dialog').close());
+// Auto-Icon-Vorschau folgt dem Übungsnamen
+$('#exdlg-name').addEventListener('input', () => {
+  if (dlgIconChoice === null) renderIconPicker($('#exdlg-name').value);
+});
 
 /* ---------------- Ansicht: Verlauf ---------------- */
 

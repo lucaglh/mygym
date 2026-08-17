@@ -178,7 +178,7 @@ function isoWeekStart(d) {
 
 /* ---------------- UI-Bausteine: Toast, Confirm, Input, Sheet ---------------- */
 
-function toast(msg, { actionLabel, onAction, duration = 2600 } = {}) {
+function toast(msg, { actionLabel, onAction, duration } = {}) {
   const wrap = $('#toast-wrap');
   const el = document.createElement('div');
   el.className = 'toast';
@@ -188,10 +188,10 @@ function toast(msg, { actionLabel, onAction, duration = 2600 } = {}) {
     btn.textContent = actionLabel;
     btn.addEventListener('click', () => { el.remove(); onAction && onAction(); });
     el.appendChild(btn);
-    duration = 8000;
   }
   wrap.appendChild(el);
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, duration);
+  const ms = duration ?? (actionLabel ? 0 : 2600);
+  if (ms > 0) setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
 }
 
 function uiConfirm(title, text, { okLabel = 'OK', danger = false } = {}) {
@@ -1576,15 +1576,29 @@ if (state.activeSession) {
 
 switchTab('home');
 
-// Service Worker + Update-Hinweis
+// Service Worker + automatisches Update
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  // Sobald die neue Version aktiv ist: außerhalb eines Trainings direkt neu laden,
+  // mitten im Training nur einen (bleibenden) Hinweis zeigen.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloadedForUpdate) return; // Erstinstallation: kein Reload nötig
+    reloadedForUpdate = true;
+    if (!state.activeSession) {
+      location.reload();
+    } else {
+      toast('Neue Version geladen', { actionLabel: 'Jetzt aktualisieren', onAction: () => location.reload() });
+    }
+  });
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register('sw.js');
+      reg.update().catch(() => {});
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
         nw && nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller && state.activeSession) {
             toast('Neue Version verfügbar', {
               actionLabel: 'Aktualisieren',
               onAction: () => location.reload(),

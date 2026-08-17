@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>MyGym</title>
+  <meta name="theme-color" content="#0d0d0d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MyGym">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header id="topbar">
+    <h1 id="topbar-title">Training</h1>
+    <span id="topbar-meta"></span>
+  </header>
+
+  <main id="view"></main>
+
+  <div id="rest-timer" hidden>
+    <div class="rt-progress"><div class="rt-bar" id="rt-bar"></div></div>
+    <div class="rt-row">
+      <div class="rt-info">
+        <span class="rt-label">Pause</span>
+        <span class="rt-time" id="rt-time">1:30</span>
+      </div>
+      <div class="rt-actions">
+        <button class="btn-ghost" id="rt-plus">+30 s</button>
+        <button class="btn-ghost" id="rt-skip">Überspringen</button>
+      </div>
+    </div>
+  </div>
+
+  <nav id="tabbar">
+    <button class="tab" data-tab="workout" aria-label="Training">
+      <svg viewBox="0 0 24 24"><path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <span>Training</span>
+    </button>
+    <button class="tab" data-tab="plan" aria-label="Plan">
+      <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <span>Plan</span>
+    </button>
+    <button class="tab" data-tab="history" aria-label="Verlauf">
+      <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3M3.5 12a8.5 8.5 0 1 1 2.5 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Verlauf</span>
+    </button>
+    <button class="tab" data-tab="stats" aria-label="Statistik">
+      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <span>Statistik</span>
+    </button>
+  </nav>
+
+  <dialog id="exercise-dialog">
+    <form method="dialog" id="exercise-form">
+      <h2 id="exdlg-title">Übung bearbeiten</h2>
+      <label>Name
+        <input type="text" id="exdlg-name" required autocomplete="off">
+      </label>
+      <div class="form-grid">
+        <label>Sätze
+          <input type="number" id="exdlg-sets" min="1" max="12" inputmode="numeric" required>
+        </label>
+        <label>Wdh.
+          <input type="text" id="exdlg-reps" inputmode="numeric" placeholder="z. B. 8 oder 8-12" required>
+        </label>
+        <label>Pause (s)
+          <input type="number" id="exdlg-rest" min="0" max="600" step="15" inputmode="numeric">
+        </label>
+      </div>
+      <label>Notizen (Geräteeinstellung, Technik …)
+        <textarea id="exdlg-notes" rows="3"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="exdlg-cancel">Abbrechen</button>
+        <button type="submit" class="btn-primary" id="exdlg-save">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="import-dialog">
+    <h2>Daten importieren</h2>
+    <p class="muted">Füge hier einen zuvor exportierten Datenexport (JSON) ein. Achtung: ersetzt alle aktuellen Daten.</p>
+    <textarea id="import-text" rows="6" placeholder='{"version":1, …}'></textarea>
+    <div class="dialog-actions">
+      <button type="button" class="btn-ghost" id="import-cancel">Abbrechen</button>
+      <button type="button" class="btn-primary" id="import-confirm">Importieren</button>
+    </div>
+  </dialog>
+
+  <div id="chart-tooltip" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

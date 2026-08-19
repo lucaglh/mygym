@@ -44,10 +44,29 @@ function samplePlan() {
 const BACKUP_KEY = 'mygym-backup';
 const DEFAULT_SETTINGS = { defaultRestSec: 90, sound: true, vibrate: true, notify: false };
 
+// Ernährung: Körperdaten + Ziel. sex/age/heightCm bleiben leer, bis sie gesetzt werden.
+const DEFAULT_PROFILE = {
+  sex: 'm',
+  age: null,
+  heightCm: null,
+  activity: 1.55,        // Fallback-Faktor, wenn keine Whoop-Daten da sind
+  goalRateKgWeek: 0.25,  // Ziel-Zunahme pro Woche
+  proteinPerKg: 2,
+  fatPerKg: 1,
+  adjustKcal: 0,         // Feinjustierung durch den Coach
+  lastAdjustISO: null,
+};
+
 function migrate(data) {
   data.version = APP_VERSION;
   data.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   data.bodyweight = Array.isArray(data.bodyweight) ? data.bodyweight : [];
+  const n = data.nutrition || {};
+  data.nutrition = {
+    profile: { ...DEFAULT_PROFILE, ...(n.profile || {}) },
+    burn: n.burn && typeof n.burn === 'object' ? n.burn : {},     // Tagesschlüssel → {kcal, strain, src}
+    intake: n.intake && typeof n.intake === 'object' ? n.intake : {}, // Tagesschlüssel → [{id,label,kcal,protein,at}]
+  };
   return data;
 }
 
@@ -389,7 +408,7 @@ function exIconHTML(ex, cls = 'ex-icon') {
 
 /* ---------------- Tabs & Rendering ---------------- */
 
-const TITLES = { home: 'MyGym', plan: 'Trainingsplan', history: 'Verlauf', stats: 'Statistik' };
+const TITLES = { home: 'MyGym', plan: 'Trainingsplan', food: 'Ernährung', history: 'Verlauf', stats: 'Statistik' };
 
 function switchTab(tab) {
   currentTab = tab;
@@ -404,6 +423,7 @@ function render() {
   const view = $('#view');
   if (currentTab === 'home') renderHome(view);
   else if (currentTab === 'plan') renderPlan(view);
+  else if (currentTab === 'food') renderFood(view);
   else if (currentTab === 'history') renderHistory(view);
   else renderStats(view);
 }
@@ -481,6 +501,8 @@ function renderHome(view) {
       </div>
     </div>`;
 
+  html += homeKcalCardHTML();
+
   const next = suggestedDay();
   if (next) {
     const preview = next.exercises.slice(0, 4).map((e) => e.name).join(' · ');
@@ -521,6 +543,30 @@ function renderHome(view) {
   view.innerHTML = html;
   view.querySelectorAll('[data-start-day]').forEach((btn) =>
     btn.addEventListener('click', () => startSession(btn.dataset.startDay)));
+  const kcalCard = view.querySelector('#home-kcal');
+  if (kcalCard) kcalCard.addEventListener('click', () => switchTab('food'));
+}
+
+// Kompakte Kalorien-Kachel fürs Dashboard (nur wenn die Ernährung eingerichtet ist)
+function homeKcalCardHTML() {
+  const target = targetKcal();
+  if (!target) return '';
+  const key = localDayKey(new Date());
+  const eaten = intakeFor(key);
+  const remaining = Math.round(target - eaten.kcal);
+  const pct = Math.max(0, Math.min(eaten.kcal / target, 1)) * 100;
+  const note = remaining > 150
+    ? `Noch <b>${fmtKcal(remaining)} kcal</b> bis zum Aufbau-Ziel`
+    : remaining > -120 ? 'Tagesziel getroffen 🎯' : `<b>${fmtKcal(-remaining)} kcal</b> über dem Ziel`;
+  return `
+    <button class="card home-kcal" id="home-kcal">
+      <div class="hk-top">
+        <span class="hk-kicker">Kalorien heute</span>
+        <span class="hk-nums">${fmtKcal(eaten.kcal)} / ${fmtKcal(target)} kcal</span>
+      </div>
+      <div class="nbar"><div class="nbar-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="hk-note">${note}</div>
+    </button>`;
 }
 
 /* ---------------- Aktives Training ---------------- */
@@ -1317,18 +1363,7 @@ function renderStats(view) {
     $('#seg-range').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
     drawWeightChart();
   }));
-  $('#add-bw').addEventListener('click', async () => {
-    const val = await uiInput('Körpergewicht', { label: 'Gewicht in kg', type: 'number', value: bwLast ? String(bwLast.kg) : '', placeholder: 'z. B. 78,5' });
-    if (val === null) return;
-    const kg = parseNum(val);
-    if (kg <= 0) return;
-    const today = localDayKey(new Date());
-    state.bodyweight = state.bodyweight.filter((x) => localDayKey(x.dateISO) !== today);
-    state.bodyweight.push({ dateISO: new Date().toISOString(), kg });
-    state.bodyweight.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
-    save(); render();
-    toast('Gewicht gespeichert');
-  });
+  $('#add-bw').addEventListener('click', askBodyweight);
 }
 
 function heatmapHTML() {
@@ -1580,6 +1615,683 @@ document.addEventListener('pointerdown', (e) => {
   if (!e.target.closest('.chart-wrap')) $('#chart-tooltip').hidden = true;
 });
 
+/* ---------------- Ernährung: Bedarf, Ziel, Coach ---------------- */
+
+/* Grundidee: Whoop misst den kompletten Tagesverbrauch (Grundumsatz + Schritte +
+   Training). Daraus wird der Ø-Verbrauch der letzten vollständigen Tage gebildet,
+   der Aufbau-Überschuss addiert und über die Gewichtsentwicklung nachjustiert. */
+
+const KCAL_PER_KG = 7700;          // Energiegehalt von 1 kg Körpermasse (Faustwert)
+const nutri = () => state.nutrition;
+const nProfile = () => state.nutrition.profile;
+
+const round10 = (n) => Math.round(n / 10) * 10;
+const fmtKcal = (n) => Math.round(n).toLocaleString('de-DE');
+const fmtSigned = (n) => (n > 0 ? '+' : n < 0 ? '−' : '±') + fmtKcal(Math.abs(n));
+
+function latestBodyweight() {
+  const bw = state.bodyweight;
+  return bw.length ? bw[bw.length - 1].kg : null;
+}
+
+// Körpergewicht für heute setzen (ein Eintrag pro Tag)
+function setBodyweight(kg) {
+  const today = localDayKey(new Date());
+  state.bodyweight = state.bodyweight.filter((x) => localDayKey(x.dateISO) !== today);
+  state.bodyweight.push({ dateISO: new Date().toISOString(), kg });
+  state.bodyweight.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
+  save();
+}
+
+// Grundumsatz nach Mifflin-St Jeor
+function bmrKcal() {
+  const p = nProfile();
+  const kg = latestBodyweight();
+  if (!kg || !p.age || !p.heightCm) return null;
+  const base = 10 * kg + 6.25 * p.heightCm - 5 * p.age;
+  return p.sex === 'w' ? base - 161 : base + 5;
+}
+
+// Fallback-Schätzung, solange keine Whoop-Daten vorliegen
+function estimatedBurn() {
+  const b = bmrKcal();
+  return b ? b * (nProfile().activity || 1.4) : null;
+}
+
+// Whoop-Tage, neueste zuerst; der laufende Tag ist standardmäßig ausgeklammert,
+// weil sein Verbrauch erst am Tagesende vollständig ist.
+function burnDays({ includeToday = false, maxAgeDays = 21 } = {}) {
+  const today = localDayKey(new Date());
+  const minKey = localDayKey(new Date(Date.now() - maxAgeDays * 86400000));
+  return Object.entries(nutri().burn)
+    .filter(([key, v]) => v && v.kcal > 0 && key >= minKey && (includeToday || key !== today))
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([key, v]) => ({ key, ...v }));
+}
+
+function burnFor(key) {
+  const v = nutri().burn[key];
+  return v && v.kcal > 0 ? v : null;
+}
+
+function setBurn(key, kcal, { strain = null, src = 'manual' } = {}) {
+  nutri().burn[key] = { kcal: Math.round(kcal), strain, src };
+  save();
+}
+
+// Basis fürs Kalorienziel: Ø der letzten vollständigen Whoop-Tage, sonst Schätzung
+function burnBase() {
+  const days = burnDays().slice(0, 7);
+  const est = estimatedBurn();
+  if (days.length >= 2 || (days.length === 1 && !est)) {
+    return { kcal: days.reduce((s, d) => s + d.kcal, 0) / days.length, source: 'whoop', days: days.length };
+  }
+  if (est) return { kcal: est, source: 'est', days: 0 };
+  return null;
+}
+
+const surplusKcal = () => (nProfile().goalRateKgWeek || 0) * KCAL_PER_KG / 7;
+
+function targetKcal() {
+  const base = burnBase();
+  if (!base) return null;
+  return round10(base.kcal + surplusKcal() + (nProfile().adjustKcal || 0));
+}
+
+function macroTargets(target) {
+  const kg = latestBodyweight();
+  if (!kg || !target) return null;
+  const protein = Math.round((nProfile().proteinPerKg || 2) * kg);
+  const fat = Math.round((nProfile().fatPerKg || 1) * kg);
+  const carbs = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
+  return { protein, fat, carbs };
+}
+
+const intakeEntries = (key) => nutri().intake[key] || [];
+
+function intakeFor(key) {
+  let kcal = 0;
+  let protein = 0;
+  for (const e of intakeEntries(key)) { kcal += e.kcal || 0; protein += e.protein || 0; }
+  return { kcal, protein };
+}
+
+function addIntake(key, { label, kcal, protein }) {
+  const list = nutri().intake[key] || (nutri().intake[key] = []);
+  list.push({ id: uid(), label: label || 'Mahlzeit', kcal: Math.round(kcal), protein: Math.round(protein || 0), at: new Date().toISOString() });
+  save();
+}
+
+function removeIntake(key, id) {
+  const list = nutri().intake[key];
+  if (!list) return;
+  nutri().intake[key] = list.filter((e) => e.id !== id);
+  if (!nutri().intake[key].length) delete nutri().intake[key];
+  save();
+}
+
+// Gewichtstrend per linearer Regression (kg pro Woche)
+function weightTrend(days = 28) {
+  const cutoff = Date.now() - days * 86400000;
+  const pts = state.bodyweight
+    .filter((b) => b.kg > 0 && new Date(b.dateISO).getTime() >= cutoff)
+    .map((b) => ({ t: new Date(b.dateISO).getTime() / 86400000, kg: b.kg }));
+  if (pts.length < 3) return null;
+  const span = pts[pts.length - 1].t - pts[0].t;
+  if (span < 10) return null; // zu kurzer Zeitraum → Wasser-Schwankungen dominieren
+  const n = pts.length;
+  const mt = pts.reduce((s, p) => s + p.t, 0) / n;
+  const mk = pts.reduce((s, p) => s + p.kg, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const p of pts) { num += (p.t - mt) * (p.kg - mk); den += (p.t - mt) * (p.t - mt); }
+  if (!den) return null;
+  return { kgPerWeek: (num / den) * 7, points: n, spanDays: Math.round(span) };
+}
+
+// Empfehlung: Ziel anhand der echten Gewichtsentwicklung nachjustieren
+function coachAdvice() {
+  const p = nProfile();
+  const trend = weightTrend();
+  if (!trend) return { kind: 'need-data' };
+  const daysSinceAdjust = p.lastAdjustISO
+    ? (Date.now() - new Date(p.lastAdjustISO).getTime()) / 86400000
+    : Infinity;
+  const diff = (p.goalRateKgWeek || 0) - trend.kgPerWeek;
+  let delta = Math.round((diff * KCAL_PER_KG / 7) / 50) * 50;
+  delta = Math.max(-400, Math.min(400, delta));
+  if (Math.abs(diff) < 0.08 || delta === 0) return { kind: 'ok', trend };
+  if (daysSinceAdjust < 7) return { kind: 'wait', trend, delta, daysSinceAdjust };
+  return { kind: 'adjust', trend, delta };
+}
+
+/* ---------------- Whoop-Import ---------------- */
+
+// Zahlen aus Fremd-Exporten robust lesen: „2.954,5“ (de) und „2,954.5“ (en)
+function parseLooseNum(v) {
+  let s = String(v ?? '').replace(/[^\d.,-]/g, '').trim();
+  if (!s) return NaN;
+  const lastC = s.lastIndexOf(',');
+  const lastD = s.lastIndexOf('.');
+  if (lastC > -1 && lastD > -1) {
+    s = lastC > lastD ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (lastC > -1) {
+    s = s.length - lastC - 1 === 3 ? s.replace(/,/g, '') : s.replace(',', '.');
+  }
+  return parseFloat(s);
+}
+
+function parseCSV(text, delim) {
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; } else quoted = false;
+      } else cur += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === delim) { row.push(cur); cur = ''; }
+    else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (ch !== '\r') cur += ch;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ''));
+}
+
+function detectDelim(line) {
+  let commas = 0;
+  let semis = 0;
+  let quoted = false;
+  for (const ch of line) {
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && ch === ',') commas++;
+    else if (!quoted && ch === ';') semis++;
+  }
+  return semis > commas ? ';' : ',';
+}
+
+// Datumsangaben aus Whoop-Exporten: „2026-08-19 03:11:47“, „19.08.2026“, „08/19/2026“
+function parseImportDate(s) {
+  const t = String(s || '').trim();
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(+m[3], +m[1] - 1, +m[2]);
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/* Erwartet „physiological_cycles.csv“ aus dem Whoop-Export:
+   eine Zeile pro Tag mit Startzeit, „Energy burned (cal)“ und „Day Strain“. */
+function importWhoopCSV(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return { ok: false, msg: 'Keine Daten gefunden' };
+  const rows = parseCSV(raw, detectDelim(raw.split('\n')[0]));
+  if (rows.length < 2) return { ok: false, msg: 'Keine Datenzeilen gefunden' };
+
+  const head = rows[0].map((h) => h.trim().toLowerCase());
+  const col = (...pats) => head.findIndex((h) => pats.some((p) => h.includes(p)));
+  if (col('activity name', 'workout start') > -1 && col('cycle start') === -1) {
+    return { ok: false, msg: 'Das ist die Workout-Datei. Nimm „physiological_cycles.csv“.' };
+  }
+  const iEnergy = col('energy burned', 'calories burned', 'kalorien', 'verbrauch');
+  const iDate = col('cycle start', 'start time', 'datum', 'date', 'day');
+  const iStrain = col('day strain', 'strain', 'belastung');
+  if (iEnergy === -1) return { ok: false, msg: 'Spalte „Energy burned“ nicht gefunden' };
+  if (iDate === -1) return { ok: false, msg: 'Spalte mit dem Datum nicht gefunden' };
+  const inKJ = /\bkj\b|kilojoule/.test(head[iEnergy]);
+
+  let imported = 0;
+  let skipped = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const d = parseImportDate(r[iDate]);
+    let kcal = parseLooseNum(r[iEnergy]);
+    if (inKJ) kcal /= 4.184;
+    if (!d || !isFinite(kcal) || kcal < 500 || kcal > 12000) { skipped++; continue; }
+    const key = localDayKey(d);
+    const strain = iStrain > -1 ? parseLooseNum(r[iStrain]) : NaN;
+    const prev = nutri().burn[key];
+    // Mehrere Zyklen an einem Tag: den vollständigsten (höchsten) Wert behalten
+    if (prev && prev.src === 'whoop' && prev.kcal >= kcal) continue;
+    nutri().burn[key] = { kcal: Math.round(kcal), strain: isFinite(strain) ? Math.round(strain * 10) / 10 : null, src: 'whoop' };
+    imported++;
+  }
+  if (!imported) return { ok: false, msg: skipped ? 'Keine brauchbaren Werte in der Datei' : 'Nichts zu importieren' };
+  save();
+  return { ok: true, imported, skipped };
+}
+
+/* ---------------- Ansicht: Ernährung ---------------- */
+
+const SNACK_IDEAS = [
+  { kcal: 200, text: '30 g Nüsse oder 2 EL Erdnussbutter' },
+  { kcal: 350, text: 'Shake: 300 ml Milch + Banane + 30 g Whey' },
+  { kcal: 550, text: '100 g Haferflocken mit Milch, Honig & Nüssen' },
+  { kcal: 800, text: 'Reis (120 g roh) + 200 g Hähnchen + 1 EL Öl' },
+];
+
+function snackIdea(remaining) {
+  let pick = null;
+  for (const s of SNACK_IDEAS) if (s.kcal <= remaining) pick = s;
+  return pick;
+}
+
+function eatAdvice(remaining, target) {
+  if (!target) return '';
+  if (remaining > 150) {
+    const idea = snackIdea(remaining);
+    return `Iss heute noch rund <b>${fmtKcal(remaining)} kcal</b>${idea ? ` – z. B. ${esc(idea.text)}.` : '.'}`;
+  }
+  if (remaining > -120) return 'Ziel getroffen 🎯 Genau so sieht ein guter Aufbautag aus.';
+  return `<b>${fmtKcal(-remaining)} kcal</b> über dem Ziel – im Aufbau kein Drama, aber halte es nicht zur Gewohnheit.`;
+}
+
+function kcalRingHTML(eaten, target) {
+  const pct = target > 0 ? eaten / target : 0;
+  const r = 54;
+  const c = 2 * Math.PI * r;
+  const shown = Math.max(0, Math.min(pct, 1));
+  const remaining = Math.round(target - eaten);
+  return `
+    <div class="kcal-ring">
+      <svg viewBox="0 0 128 128" aria-hidden="true">
+        <circle cx="64" cy="64" r="${r}" class="kr-track"/>
+        <circle cx="64" cy="64" r="${r}" class="kr-value ${pct > 1.05 ? 'over' : ''}"
+          stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - shown)).toFixed(1)}"/>
+      </svg>
+      <div class="kr-center">
+        <div class="kr-big">${fmtKcal(Math.abs(remaining))}</div>
+        <div class="kr-lbl">${remaining >= 0 ? 'kcal übrig' : 'kcal drüber'}</div>
+      </div>
+    </div>`;
+}
+
+function barHTML(value, target, cls = '') {
+  const pct = target > 0 ? Math.max(0, Math.min(value / target, 1)) * 100 : 0;
+  return `<div class="nbar ${cls}"><div class="nbar-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+}
+
+function renderFood(view) {
+  const p = nProfile();
+  const todayKey = localDayKey(new Date());
+  const base = burnBase();
+  const target = targetKcal();
+  const eaten = intakeFor(todayKey);
+  const macros = macroTargets(target);
+  const bw = latestBodyweight();
+  let html = '';
+
+  if (!target) {
+    html += `
+      <div class="card setup-card">
+        <h3>Kalorien aus deinen Whoop-Daten</h3>
+        <p class="muted">Whoop misst deinen kompletten Tagesverbrauch – inklusive Schritte und Alltag.
+          MyGym rechnet daraus aus, wie viel du essen musst, um sauber aufzubauen.</p>
+        <ol class="setup-steps">
+          <li>Körperdaten &amp; Ziel eintragen</li>
+          <li>Whoop-Verbrauch importieren oder täglich eintragen</li>
+          <li>Essen tracken – die App sagt dir, wie viel noch fehlt</li>
+        </ol>
+        <button class="btn-primary" id="food-setup-profile">Körperdaten eintragen</button>
+        <button class="btn-ghost" id="food-setup-whoop" style="width:100%;margin-top:8px">Whoop-Verbrauch hinzufügen</button>
+      </div>`;
+    view.innerHTML = html;
+    $('#food-setup-profile').addEventListener('click', openProfileDialog);
+    $('#food-setup-whoop').addEventListener('click', openWhoopDialog);
+    return;
+  }
+
+  const remaining = target - eaten.kcal;
+
+  html += `
+    <div class="card today-card">
+      <div class="tc-head">
+        <div>
+          <div class="tc-kicker">Heute</div>
+          <div class="tc-target">Ziel ${fmtKcal(target)} kcal</div>
+        </div>
+        <button class="btn-ghost" id="food-edit-profile">Ziel anpassen</button>
+      </div>
+      ${kcalRingHTML(eaten.kcal, target)}
+      <div class="tc-advice">${eatAdvice(remaining, target)}</div>
+      <div class="tc-split">
+        <div><span class="tcs-v">${fmtKcal(eaten.kcal)}</span><span class="tcs-l">gegessen</span></div>
+        <div><span class="tcs-v">${fmtKcal(Math.max(0, remaining))}</span><span class="tcs-l">offen</span></div>
+        <div><span class="tcs-v">${base ? fmtKcal(base.kcal) : '–'}</span><span class="tcs-l">Verbrauch Ø</span></div>
+      </div>`;
+
+  if (macros) {
+    html += `
+      <div class="macro-row">
+        <div class="macro">
+          <div class="m-top"><span>Eiweiß</span><span>${Math.round(eaten.protein)} / ${macros.protein} g</span></div>
+          ${barHTML(eaten.protein, macros.protein, 'protein')}
+        </div>
+        <div class="macro-sub">Richtwert: ${macros.carbs} g Kohlenhydrate · ${macros.fat} g Fett</div>
+      </div>`;
+  }
+  html += '</div>';
+
+  html += `
+    <div class="quick-add">
+      <button class="btn-ghost" data-quick="250">+250</button>
+      <button class="btn-ghost" data-quick="500">+500</button>
+      <button class="btn-ghost" data-quick="750">+750</button>
+      <button class="btn-primary inline" id="food-add">+ Mahlzeit</button>
+    </div>`;
+
+  const entries = intakeEntries(todayKey);
+  if (entries.length) {
+    html += '<div class="card meal-card">';
+    for (const e of entries) {
+      const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(e.at));
+      html += `
+        <div class="meal-row">
+          <div class="mr-info">
+            <div class="mr-name">${esc(e.label)}</div>
+            <div class="mr-sub">${time} Uhr${e.protein ? ` · ${e.protein} g Eiweiß` : ''}</div>
+          </div>
+          <div class="mr-kcal">${fmtKcal(e.kcal)}</div>
+          <button class="icon-btn mr-del" data-del="${e.id}" aria-label="Eintrag löschen">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>`;
+    }
+    html += '</div>';
+  }
+
+  /* Verbrauch: genau der Punkt, um den es geht – wie teuer ist der Alltag? */
+  const todayBurn = burnFor(todayKey);
+  const bmr = bmrKcal();
+  const whoopDays = burnDays();
+  html += `
+    <div class="card chart-card">
+      <div class="bw-head">
+        <div>
+          <h3>Verbrauch</h3>
+          <div class="chart-sub">${base.source === 'whoop'
+            ? `Ø der letzten ${base.days} Whoop-${base.days === 1 ? 'Tag' : 'Tage'}`
+            : 'Geschätzt aus Körperdaten – noch keine Whoop-Daten'}</div>
+        </div>
+        <button class="btn-ghost" id="food-whoop">Whoop</button>
+      </div>
+      <div class="burn-grid">
+        <div><span class="bg-v">${fmtKcal(base.kcal)}</span><span class="bg-l">Ø Tagesverbrauch</span></div>
+        <div><span class="bg-v">${bmr ? fmtKcal(bmr) : '–'}</span><span class="bg-l">Grundumsatz</span></div>
+        <div><span class="bg-v">${todayBurn ? fmtKcal(todayBurn.kcal) : '–'}</span><span class="bg-l">heute${todayBurn ? ' (läuft)' : ''}</span></div>
+      </div>`;
+  if (bmr && base.source === 'whoop') {
+    const activityCost = Math.round(base.kcal - bmr);
+    html += `<div class="hint">Schritte, Alltag und Training kosten dich im Schnitt
+      <b>${fmtKcal(Math.max(0, activityCost))} kcal</b> zusätzlich zum Grundumsatz – genau das musst du mitessen.</div>`;
+  }
+  // Harter Tag: Whoop liegt heute deutlich über dem Schnitt → Extra-Portion einplanen
+  if (todayBurn && base.source === 'whoop') {
+    const over = Math.round(todayBurn.kcal - base.kcal);
+    if (over >= 200) {
+      html += `<div class="hint">Heute bist du schon <b>${fmtKcal(over)} kcal</b> über deinem Schnitt
+        – leg heute eine Extra-Portion drauf.</div>`;
+    }
+  }
+  if (!whoopDays.length) {
+    html += '<div class="hint">Noch keine Whoop-Werte. Ohne sie rechnet MyGym nur mit einem Schätzfaktor.</div>';
+  }
+  html += '</div>';
+
+  /* Zielrechnung transparent aufschlüsseln */
+  html += `
+    <div class="card chart-card">
+      <h3>So entsteht dein Ziel</h3>
+      <div class="calc-row"><span>Ø Tagesverbrauch</span><span>${fmtKcal(base.kcal)} kcal</span></div>
+      <div class="calc-row"><span>Aufbau-Überschuss (${fmtW(p.goalRateKgWeek)} kg/Woche)</span><span>${fmtSigned(surplusKcal())} kcal</span></div>
+      <div class="calc-row"><span>Feinjustierung (Coach)</span><span>${fmtSigned(p.adjustKcal || 0)} kcal</span></div>
+      <div class="calc-row total"><span>Tagesziel</span><span>${fmtKcal(target)} kcal</span></div>
+      ${bw ? `<div class="chart-sub" style="margin-top:8px">Aktuelles Gewicht: ${fmtW(bw)} kg</div>` : ''}
+    </div>`;
+
+  /* Coach: Gewichtsentwicklung gegen Ziel prüfen */
+  const advice = coachAdvice();
+  html += '<div class="card coach-card"><h3>Coach</h3>';
+  if (advice.kind === 'need-data') {
+    html += `<p class="muted">Wieg dich 2–3× pro Woche (Tab „Statistik“ → Körpergewicht).
+      Nach ~2 Wochen passe ich dein Ziel automatisch an deine echte Gewichtsentwicklung an.</p>
+      <button class="btn-ghost" id="coach-weigh" style="width:100%">Gewicht eintragen</button>`;
+  } else {
+    const t = advice.trend;
+    const dir = t.kgPerWeek >= 0 ? '+' : '−';
+    html += `<div class="trend-row">
+      <span class="tr-v">${dir}${fmtW(Math.abs(t.kgPerWeek))} kg</span>
+      <span class="tr-l">pro Woche (${t.spanDays} Tage, ${t.points} Messungen)<br>Ziel: +${fmtW(p.goalRateKgWeek)} kg/Woche</span>
+    </div>`;
+    if (advice.kind === 'ok') {
+      html += '<p class="muted">Du liegst im Zielkorridor – Ziel bleibt, weiter so. 💪</p>';
+    } else if (advice.kind === 'wait') {
+      html += `<p class="muted">Letzte Anpassung ist erst ${Math.round(advice.daysSinceAdjust)} Tage her.
+        Gib ihr ein paar Tage, bevor du erneut nachjustierst.</p>
+        <button class="btn-ghost" id="coach-apply" data-delta="${advice.delta}" style="width:100%">Trotzdem ${fmtSigned(advice.delta)} kcal übernehmen</button>`;
+    } else {
+      html += `<p class="muted">${advice.delta > 0
+        ? 'Du nimmst langsamer zu als geplant – dein Verbrauch frisst den Überschuss auf.'
+        : 'Du nimmst schneller zu als geplant – etwas weniger hält den Aufbau sauberer.'}</p>
+        <button class="btn-primary" id="coach-apply" data-delta="${advice.delta}">Ziel um ${fmtSigned(advice.delta)} kcal anpassen</button>`;
+    }
+  }
+  html += '</div>';
+
+  /* Letzte 7 Tage: Verbrauch vs. gegessen */
+  const rows = [];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = localDayKey(d);
+    const b = burnFor(key);
+    const inTake = intakeFor(key);
+    if (b || inTake.kcal) rows.push({ d, key, burn: b ? b.kcal : null, eaten: inTake.kcal });
+  }
+  if (rows.length) {
+    html += `<div class="card chart-card">
+      <h3>Letzte Tage</h3>
+      <div class="chart-sub">Verbrauch (Whoop) gegen gegessene Kalorien</div>
+      <table class="pr-table"><tr><th>Tag</th><th>Verbrauch</th><th>Gegessen</th><th>Bilanz</th></tr>`;
+    for (const r of rows) {
+      const bal = r.burn && r.eaten ? r.eaten - r.burn : null;
+      html += `<tr>
+        <td>${fmtDateShort.format(r.d)}</td>
+        <td>${r.burn ? fmtKcal(r.burn) : '–'}</td>
+        <td>${r.eaten ? fmtKcal(r.eaten) : '–'}</td>
+        <td class="${bal === null ? '' : bal >= 0 ? 'bal-plus' : 'bal-minus'}">${bal === null ? '–' : fmtSigned(bal)}</td>
+      </tr>`;
+    }
+    html += '</table></div>';
+  }
+
+  view.innerHTML = html;
+
+  $('#food-edit-profile').addEventListener('click', openProfileDialog);
+  $('#food-whoop').addEventListener('click', openWhoopDialog);
+  $('#food-add').addEventListener('click', async () => {
+    const entry = await openFoodDialog();
+    if (!entry) return;
+    addIntake(todayKey, entry);
+    render();
+    toast('Eingetragen');
+  });
+  view.querySelectorAll('[data-quick]').forEach((b) => b.addEventListener('click', () => {
+    addIntake(todayKey, { label: 'Schnell-Eintrag', kcal: +b.dataset.quick, protein: 0 });
+    haptic();
+    render();
+  }));
+  view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
+    removeIntake(todayKey, b.dataset.del);
+    render();
+  }));
+  const weighBtn = $('#coach-weigh');
+  if (weighBtn) weighBtn.addEventListener('click', askBodyweight);
+  const applyBtn = $('#coach-apply');
+  if (applyBtn) applyBtn.addEventListener('click', () => {
+    const p2 = nProfile();
+    p2.adjustKcal = Math.round((p2.adjustKcal || 0) + +applyBtn.dataset.delta);
+    p2.lastAdjustISO = new Date().toISOString();
+    save();
+    render();
+    toast(`Neues Tagesziel: ${fmtKcal(targetKcal())} kcal`);
+  });
+}
+
+async function askBodyweight() {
+  const cur = latestBodyweight();
+  const val = await uiInput('Körpergewicht', {
+    label: 'Gewicht in kg', type: 'number',
+    value: cur ? String(cur) : '', placeholder: 'z. B. 78,5',
+  });
+  if (val === null) return;
+  const kg = parseNum(val);
+  if (kg <= 0) return;
+  setBodyweight(kg);
+  render();
+  toast('Gewicht gespeichert');
+}
+
+/* ---------------- Dialoge: Mahlzeit, Profil, Whoop ---------------- */
+
+function refreshFoodNames() {
+  const names = new Set();
+  const days = Object.values(nutri().intake);
+  for (let i = days.length - 1; i >= 0 && names.size < 25; i--)
+    for (const e of days[i]) if (e.label && e.label !== 'Schnell-Eintrag') names.add(e.label);
+  $('#food-names').innerHTML = [...names].map((n) => `<option value="${esc(n)}">`).join('');
+}
+
+function openFoodDialog() {
+  return new Promise((resolve) => {
+    const dlg = $('#food-dialog');
+    refreshFoodNames();
+    $('#food-label').value = '';
+    $('#food-kcal').value = '';
+    $('#food-protein').value = '';
+    const done = (val) => { cleanup(); resolve(val); };
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const kcal = parseNum($('#food-kcal').value);
+      if (kcal <= 0) { toast('Bitte Kalorien eintragen'); return; }
+      dlg.close();
+      done({ label: $('#food-label').value.trim() || 'Mahlzeit', kcal, protein: parseNum($('#food-protein').value) });
+    };
+    const onCancel = () => { dlg.close(); done(null); };
+    const onDlgCancel = () => done(null);
+    function cleanup() {
+      $('#food-form').removeEventListener('submit', onSubmit);
+      $('#food-cancel').removeEventListener('click', onCancel);
+      dlg.removeEventListener('cancel', onDlgCancel);
+    }
+    $('#food-form').addEventListener('submit', onSubmit);
+    $('#food-cancel').addEventListener('click', onCancel);
+    dlg.addEventListener('cancel', onDlgCancel);
+    dlg.showModal();
+    setTimeout(() => $('#food-kcal').focus(), 50);
+  });
+}
+
+function openProfileDialog() {
+  const dlg = $('#profile-dialog');
+  const p = nProfile();
+  const bw = latestBodyweight();
+  $('#prof-sex').value = p.sex || 'm';
+  $('#prof-age').value = p.age ?? '';
+  $('#prof-height').value = p.heightCm ?? '';
+  $('#prof-weight').value = bw ? String(bw).replace('.', ',') : '';
+  $('#prof-rate').value = String(p.goalRateKgWeek ?? 0.25);
+  $('#prof-activity').value = String(p.activity ?? 1.55);
+  $('#prof-protein').value = String(p.proteinPerKg ?? 2).replace('.', ',');
+  $('#prof-fat').value = String(p.fatPerKg ?? 1).replace('.', ',');
+  $('#prof-adjust').value = String(p.adjustKcal || 0);
+
+  const onSubmit = (e) => {
+    e.preventDefault();
+    const age = Math.round(parseNum($('#prof-age').value));
+    const h = Math.round(parseNum($('#prof-height').value));
+    const kg = parseNum($('#prof-weight').value);
+    p.sex = $('#prof-sex').value === 'w' ? 'w' : 'm';
+    p.age = age > 0 ? age : null;
+    p.heightCm = h > 0 ? h : null;
+    p.goalRateKgWeek = parseFloat($('#prof-rate').value) || 0;
+    p.activity = parseFloat($('#prof-activity').value) || 1.55;
+    p.proteinPerKg = Math.min(4, parseNum($('#prof-protein').value)) || 2;
+    p.fatPerKg = Math.min(3, parseNum($('#prof-fat').value)) || 1;
+    p.adjustKcal = Math.round(parseFloat(String($('#prof-adjust').value).replace(',', '.')) || 0);
+    if (kg > 0 && kg !== latestBodyweight()) setBodyweight(kg);
+    save();
+    dlg.close();
+    cleanup();
+    render();
+    toast(targetKcal() ? `Tagesziel: ${fmtKcal(targetKcal())} kcal` : 'Gespeichert');
+  };
+  const onCancel = () => { dlg.close(); cleanup(); };
+  function cleanup() {
+    $('#profile-form').removeEventListener('submit', onSubmit);
+    $('#profile-cancel').removeEventListener('click', onCancel);
+    dlg.removeEventListener('cancel', cleanup);
+  }
+  $('#profile-form').addEventListener('submit', onSubmit);
+  $('#profile-cancel').addEventListener('click', onCancel);
+  dlg.addEventListener('cancel', cleanup);
+  dlg.showModal();
+}
+
+function openWhoopDialog() {
+  $('#whoop-text').value = '';
+  $('#whoop-file').value = '';
+  $('#whoop-dialog').showModal();
+}
+
+async function askWhoopBurn(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() - offsetDays);
+  const key = localDayKey(d);
+  const cur = burnFor(key);
+  const label = offsetDays === 0 ? 'heute' : 'gestern';
+  const val = await uiInput(`Whoop-Verbrauch ${label}`, {
+    label: 'Verbrannte Kalorien laut Whoop (kcal)',
+    type: 'number',
+    value: cur ? String(cur.kcal) : '',
+    placeholder: 'z. B. 3200',
+  });
+  if (val === null) return;
+  const kcal = parseNum(val);
+  if (kcal < 500 || kcal > 12000) { toast('Bitte einen realistischen Wert eintragen'); return; }
+  setBurn(key, kcal);
+  render();
+  const t = targetKcal();
+  toast(t ? `Gespeichert · Tagesziel ${fmtKcal(t)} kcal` : 'Gespeichert');
+}
+
+$('#whoop-close').addEventListener('click', () => $('#whoop-dialog').close());
+$('#whoop-today').addEventListener('click', () => { $('#whoop-dialog').close(); askWhoopBurn(0); });
+$('#whoop-yesterday').addEventListener('click', () => { $('#whoop-dialog').close(); askWhoopBurn(1); });
+$('#whoop-file').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  try {
+    $('#whoop-text').value = await file.text();
+  } catch (err) {
+    toast('Datei konnte nicht gelesen werden');
+  }
+});
+$('#whoop-import').addEventListener('click', () => {
+  const res = importWhoopCSV($('#whoop-text').value);
+  if (!res.ok) { toast(res.msg); return; }
+  $('#whoop-dialog').close();
+  $('#whoop-text').value = '';
+  switchTab('food');
+  toast(`${res.imported} Tage importiert`);
+});
+
 /* ---------------- Einstellungen ---------------- */
 
 $('#open-settings').addEventListener('click', () => {
@@ -1611,10 +2323,11 @@ $('#set-notify').addEventListener('change', async (e) => {
   state.settings.notify = e.target.checked;
   save();
 });
-// Konnektoren: ehrlicher Hinweis, was dafür nötig ist
+// Konnektoren: Whoop läuft über Import/Eingabe, Strava braucht weiterhin einen API-Zugang
 document.querySelectorAll('[data-connector]').forEach((b) => b.addEventListener('click', () => {
   const name = b.dataset.connector;
   $('#settings-dialog').close();
+  if (name === 'Whoop') { openWhoopDialog(); return; }
   uiConfirm(`${name} verbinden`,
     `${name} erlaubt Verbindungen nur über einen registrierten API-Zugang (eigener ${name}-Entwickler-Schlüssel + kleiner Server). ` +
     `Bis dahin: Nutze „Teilen“ in der Trainings-Zusammenfassung, um dein Workout z. B. in ${name} als Notiz einzufügen.`,

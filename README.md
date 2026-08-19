@@ -26,10 +26,53 @@ bleiben lokal auf dem Gerät (localStorage).
   Metrik- (Max/e1RM/Volumen) und Zeitraum-Umschalter, Wochenvolumen,
   Bestwerte-Tabelle (schwerster Satz + geschätztes 1RM) und
   Körpergewichts-Tracking mit Verlauf.
+- **Ernährung (Whoop-Kalorien)**: Tagesziel aus dem echten Verbrauch statt aus
+  Faustformeln — siehe unten.
 - **Einstellungen**: Ton, Vibration, Standard-Pause, Export/Import (JSON),
-  Alles-zurücksetzen.
+  Whoop-Import, Alles-zurücksetzen.
 - Offline-fähig (Service Worker) mit Update-Hinweis in der App; Bildschirm
   bleibt während des Trainings an (Wake Lock).
+
+## Kalorien aus Whoop-Daten (Tab „Essen“)
+
+Wer viel läuft, verbrennt im Alltag oft mehr, als jede Faustformel schätzt — und
+nimmt trotz „genug essen“ nicht zu. Der Tab **Essen** rechnet deshalb mit dem
+gemessenen Verbrauch:
+
+1. **Körperdaten & Ziel** eintragen (Geschlecht, Alter, Größe, Gewicht,
+   gewünschte Zunahme pro Woche, Eiweiß/Fett pro kg).
+2. **Whoop-Verbrauch** hinzufügen — zwei Wege:
+   - *Täglich eintragen*: den Wert „Kalorien verbrannt“ aus der Whoop-App
+     (für heute oder gestern).
+   - *CSV-Import*: Whoop-App → Profil → **Daten exportieren**; aus der Mail die
+     Datei `physiological_cycles.csv` auswählen oder ihren Inhalt einfügen.
+     Erkannt werden Datum, „Energy burned“ (kcal oder kJ) und „Day Strain“,
+     auch mit deutschem Zahlen-/Trennzeichenformat.
+3. **Essen tracken** — Schnell-Buttons (+250/+500/+750) oder Mahlzeit mit
+   Bezeichnung, kcal und Eiweiß.
+
+**So entsteht das Tagesziel:**
+
+```
+Ø Tagesverbrauch (letzte 7 vollständige Whoop-Tage)
++ Aufbau-Überschuss  (Ziel-kg pro Woche × 7700 kcal ÷ 7)
++ Feinjustierung     (vom Coach nach echter Gewichtsentwicklung)
+= Tagesziel
+```
+
+Der laufende Tag zählt nicht in den Schnitt, weil sein Wert erst am Abend
+vollständig ist; liegt er deutlich über dem Schnitt, weist die App darauf hin.
+Ohne Whoop-Daten wird ersatzweise mit Mifflin-St-Jeor-Grundumsatz × Aktivitäts-
+faktor gerechnet.
+
+**Coach**: Aus den Körpergewichts-Einträgen (Tab „Statistik“, 2–3× pro Woche)
+wird per linearer Regression der Trend in kg/Woche bestimmt. Weicht er vom Ziel
+ab, schlägt die App eine Anpassung des Tagesziels vor (max. ±400 kcal,
+frühestens alle 7 Tage) — anwenden per Knopfdruck.
+
+Alles läuft lokal: kein Whoop-Konto, kein API-Schlüssel, kein Server. Eine
+direkte Whoop-Anbindung wäre nur mit eigenem Entwickler-Zugang **und** einem
+Server für den OAuth-Tokentausch möglich.
 
 ## Lokal testen
 

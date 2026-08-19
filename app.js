@@ -41,7 +41,8 @@ function samplePlan() {
   };
 }
 
-const DEFAULT_SETTINGS = { defaultRestSec: 90, sound: true, vibrate: true };
+const BACKUP_KEY = 'mygym-backup';
+const DEFAULT_SETTINGS = { defaultRestSec: 90, sound: true, vibrate: true, notify: false };
 
 function migrate(data) {
   data.version = APP_VERSION;
@@ -57,8 +58,21 @@ function load() {
       const data = JSON.parse(raw);
       if (data && Array.isArray(data.sessions) && data.plan) return migrate(data);
     }
-  } catch (e) { /* korrupte Daten → Neustart mit Beispielplan */ }
+  } catch (e) { /* korrupte Hauptdaten → Backup versuchen */ }
+  try {
+    const b = JSON.parse(localStorage.getItem(BACKUP_KEY));
+    if (b && b.data && b.data.plan && Array.isArray(b.data.sessions)) return migrate(b.data);
+  } catch (e) { /* kein brauchbares Backup */ }
   return migrate({ plan: samplePlan(), sessions: [], activeSession: null });
+}
+
+// Einmal pro Tag eine lokale Sicherungskopie anlegen (Schutz vor Datenverlust)
+function dailyBackup() {
+  try {
+    const today = localDayKey(new Date());
+    const b = JSON.parse(localStorage.getItem(BACKUP_KEY) || '{}');
+    if (b.day !== today) localStorage.setItem(BACKUP_KEY, JSON.stringify({ day: today, data: state }));
+  } catch (e) { /* Speicher voll o. ä. — nicht kritisch */ }
 }
 
 let state = load();
@@ -303,7 +317,11 @@ function releaseWakeLock() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && state.activeSession) acquireWakeLock();
+  if (document.visibilityState !== 'visible' || !state.activeSession) return;
+  acquireWakeLock();
+  // Timer nach Rückkehr in die App wiederherstellen (iOS pausiert Intervalle)
+  if (state.activeSession.restEndsAt) showRestUI();
+  updateTopbarMeta();
 });
 
 /* ---------------- Übungs-Piktogramme ---------------- */
@@ -356,9 +374,17 @@ function iconIdFor(ex) {
   return (ex.icon && EX_ICONS[ex.icon]) ? ex.icon : autoIconId(ex.name || '');
 }
 
+// Farbton je Muskelgruppe (Kategorien-Palette)
+const ICON_TINT = {
+  bench: 'push', incline: 'push', ohp: 'push', latraise: 'push', pushdown: 'push',
+  pullup: 'pull', row: 'pull', curl: 'pull',
+  squat: 'legs', legpress: 'legs', deadlift: 'legs', legext: 'legs', legcurl: 'legs', calf: 'legs',
+  core: 'core', dumbbell: 'push',
+};
+
 function exIconHTML(ex, cls = 'ex-icon') {
   const id = typeof ex === 'string' ? ex : iconIdFor(ex);
-  return `<span class="${cls}"><svg viewBox="0 0 24 24">${EX_ICONS[id].svg}</svg></span>`;
+  return `<span class="${cls} tint-${ICON_TINT[id] || 'push'}"><svg viewBox="0 0 24 24">${EX_ICONS[id].svg}</svg></span>`;
 }
 
 /* ---------------- Tabs & Rendering ---------------- */
@@ -475,9 +501,10 @@ function renderHome(view) {
     for (const day of others) {
       const last = lastSessionForDay(day.id);
       const sub = `${day.exercises.length} Übungen` + (last ? ` · zuletzt ${relativeDay(last.dateISO)}` : '');
+      const di = days.indexOf(day);
       html += `
         <button class="day-pick" data-start-day="${day.id}">
-          <span class="day-badge">${esc(day.name.slice(0, 2))}</span>
+          <span class="day-badge day-tint-${di % 4}">${esc(day.name.slice(0, 2))}</span>
           <span class="day-info">
             <span class="day-name">${esc(day.name)}</span>
             <div class="day-sub">${esc(sub)}</div>
@@ -749,7 +776,34 @@ async function finishSession() {
   showSummary(session, prs, prevSame);
 }
 
+let lastSummary = null;
+
+function workoutShareText(session, prs) {
+  const lines = [
+    `🏋️ ${session.dayName} — ${fmtDate.format(new Date(session.dateISO))}`,
+    `${sessionSetsDone(session)} Sätze · ${fmtKg(sessionVolume(session))} Volumen · ${fmtDuration(session.durationSec || 0)}`,
+  ];
+  for (const p of prs) lines.push(`🏆 ${p.name}: ${fmtW(p.weight)} kg (PR)`);
+  lines.push('— erfasst mit MyGym');
+  return lines.join('\n');
+}
+
+async function shareWorkout() {
+  if (!lastSummary) return;
+  const text = workoutShareText(lastSummary.session, lastSummary.prs);
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Zusammenfassung kopiert');
+  } catch (e) { /* nichts verfügbar */ }
+}
+
 function showSummary(session, prs, prevSame) {
+  lastSummary = { session, prs };
   $('#sum-emoji').textContent = prs.length ? '🏆' : '🎉';
   $('#sum-title').textContent = prs.length ? 'Neue Bestleistung!' : 'Training abgeschlossen!';
   const vol = sessionVolume(session);
@@ -781,6 +835,7 @@ $('#summary-close').addEventListener('click', () => {
   $('#summary-dialog').close();
   switchTab('history');
 });
+$('#summary-share').addEventListener('click', shareWorkout);
 
 async function cancelSession() {
   const ok = await uiConfirm('Training abbrechen?', 'Alle Eingaben dieses Trainings gehen verloren.', { okLabel: 'Abbrechen bestätigen', danger: true });
@@ -800,13 +855,13 @@ function startRest(sec, exName) {
   state.activeSession.restEndsAt = Date.now() + sec * 1000;
   state.activeSession.restTotal = sec;
   state.activeSession.restLabel = exName || 'Pause';
+  state.activeSession.restDone = false;
   save();
   showRestUI();
 }
 
 function showRestUI() {
   $('#rest-timer').hidden = false;
-  $('#rt-label').textContent = state.activeSession.restLabel || 'Pause';
   clearInterval(restInterval);
   restInterval = setInterval(tickRest, 250);
   tickRest();
@@ -815,26 +870,63 @@ function showRestUI() {
 function tickRest() {
   const s = state.activeSession;
   if (!s || !s.restEndsAt) return stopRest();
-  const remaining = Math.max(0, Math.ceil((s.restEndsAt - Date.now()) / 1000));
-  $('#rt-time').textContent = fmtClock(remaining);
-  $('#rest-timer').classList.toggle('ending', remaining <= 5 && remaining > 0);
-  const frac = Math.max(0, (s.restEndsAt - Date.now()) / (s.restTotal * 1000));
-  $('#rt-bar').style.width = `${frac * 100}%`;
-  if (remaining <= 0) {
-    beep();
-    haptic([200, 100, 200]);
-    stopRest();
+  const rt = $('#rest-timer');
+  const diff = s.restEndsAt - Date.now();
+  if (diff > 0) {
+    rt.classList.remove('over');
+    rt.classList.toggle('ending', diff <= 5000);
+    $('#rt-label').textContent = s.restLabel || 'Pause';
+    $('#rt-time').textContent = fmtClock(Math.ceil(diff / 1000));
+    $('#rt-bar').style.width = `${Math.max(0, diff / (s.restTotal * 1000)) * 100}%`;
+    $('#rt-skip').textContent = 'Weiter';
+    $('#rt-plus').hidden = false;
+  } else {
+    // Abgelaufen: Banner bleibt stehen ("Pause vorbei"), bis der nächste Satz
+    // kommt oder es bestätigt wird — verschwindet nicht mehr von selbst.
+    if (!s.restDone) {
+      s.restDone = true;
+      save();
+      notifyRestEnd();
+    }
+    rt.classList.remove('ending');
+    rt.classList.add('over');
+    $('#rt-label').textContent = 'Pause vorbei';
+    $('#rt-time').textContent = '+' + fmtClock(Math.floor(-diff / 1000));
+    $('#rt-bar').style.width = '100%';
+    $('#rt-skip').textContent = 'OK';
+    $('#rt-plus').hidden = true;
+  }
+}
+
+function notifyRestEnd() {
+  beep();
+  haptic([200, 100, 200]);
+  if (state.settings.notify && 'Notification' in window && Notification.permission === 'granted'
+      && document.visibilityState !== 'visible' && navigator.serviceWorker) {
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return;
+      const ex = state.activeSession && state.activeSession.restLabel;
+      reg.showNotification('Pause vorbei 💪', {
+        body: (ex ? ex + ' — ' : '') + 'Zeit für den nächsten Satz!',
+        tag: 'mygym-rest',
+        icon: 'icons/icon-192.png',
+        badge: 'icons/icon-192.png',
+      });
+    }).catch(() => {});
   }
 }
 
 function stopRest() {
   clearInterval(restInterval);
   restInterval = null;
-  $('#rest-timer').hidden = true;
-  $('#rest-timer').classList.remove('ending');
+  const rt = $('#rest-timer');
+  rt.hidden = true;
+  rt.classList.remove('ending', 'over');
+  $('#rt-plus').hidden = false;
   if (state.activeSession) {
     state.activeSession.restEndsAt = null;
     state.activeSession.restTotal = null;
+    state.activeSession.restDone = false;
     save();
   }
 }
@@ -1493,12 +1585,41 @@ document.addEventListener('pointerdown', (e) => {
 $('#open-settings').addEventListener('click', () => {
   $('#set-sound').checked = state.settings.sound;
   $('#set-vibrate').checked = state.settings.vibrate;
+  $('#set-notify').checked = state.settings.notify && ('Notification' in window) && Notification.permission === 'granted';
   $('#set-rest').value = state.settings.defaultRestSec;
   $('#settings-dialog').showModal();
 });
 $('#settings-close').addEventListener('click', () => $('#settings-dialog').close());
 $('#set-sound').addEventListener('change', (e) => { state.settings.sound = e.target.checked; save(); });
 $('#set-vibrate').addEventListener('change', (e) => { state.settings.vibrate = e.target.checked; save(); });
+$('#set-notify').addEventListener('change', async (e) => {
+  if (e.target.checked) {
+    if (!('Notification' in window)) {
+      toast('Auf diesem Gerät nicht verfügbar (App zum Home-Bildschirm hinzufügen)');
+      e.target.checked = false;
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      toast('Berechtigung nicht erteilt');
+      e.target.checked = false;
+      state.settings.notify = false;
+      save();
+      return;
+    }
+  }
+  state.settings.notify = e.target.checked;
+  save();
+});
+// Konnektoren: ehrlicher Hinweis, was dafür nötig ist
+document.querySelectorAll('[data-connector]').forEach((b) => b.addEventListener('click', () => {
+  const name = b.dataset.connector;
+  $('#settings-dialog').close();
+  uiConfirm(`${name} verbinden`,
+    `${name} erlaubt Verbindungen nur über einen registrierten API-Zugang (eigener ${name}-Entwickler-Schlüssel + kleiner Server). ` +
+    `Bis dahin: Nutze „Teilen“ in der Trainings-Zusammenfassung, um dein Workout z. B. in ${name} als Notiz einzufügen.`,
+    { okLabel: 'Verstanden' });
+}));
 $('#set-rest').addEventListener('change', (e) => {
   state.settings.defaultRestSec = Math.max(0, parseInt(e.target.value, 10) || 90);
   save();
@@ -1569,12 +1690,15 @@ if (state.activeSession) {
   startElapsedTicker();
   acquireWakeLock();
   if (state.activeSession.restEndsAt) {
-    if (state.activeSession.restEndsAt > Date.now()) showRestUI();
-    else { state.activeSession.restEndsAt = null; state.activeSession.restTotal = null; save(); }
+    const overSec = (Date.now() - state.activeSession.restEndsAt) / 1000;
+    // Läuft noch oder gerade erst abgelaufen → anzeigen; uralt → still aufräumen
+    if (overSec < 300) showRestUI();
+    else { state.activeSession.restEndsAt = null; state.activeSession.restTotal = null; state.activeSession.restDone = false; save(); }
   }
 }
 
 switchTab('home');
+dailyBackup();
 
 // Service Worker + automatisches Update
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

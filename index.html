@@ -121,6 +121,13 @@
     </div>
     <div class="setting-row">
       <div class="sr-text">
+        <div class="sr-title">Benachrichtigung</div>
+        <div class="sr-sub">„Pause vorbei“ auch im Hintergrund</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="set-notify"><span class="slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div class="sr-text">
         <div class="sr-title">Standard-Pause</div>
         <div class="sr-sub">Für neue Übungen (Sekunden)</div>
       </div>
@@ -134,6 +141,16 @@
       <div class="sr-btns">
         <button class="btn-ghost" id="export-data">Export</button>
         <button class="btn-ghost" id="import-data">Import</button>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div class="sr-text">
+        <div class="sr-title">Verbindungen</div>
+        <div class="sr-sub">Strava &amp; Whoop</div>
+      </div>
+      <div class="sr-btns">
+        <button class="btn-ghost" data-connector="Strava">Strava</button>
+        <button class="btn-ghost" data-connector="Whoop">Whoop</button>
       </div>
     </div>
     <div class="setting-row">
@@ -170,6 +187,7 @@
     <div id="sum-prs"></div>
     <div id="sum-compare"></div>
     <div class="dialog-actions" style="justify-content:center">
+      <button type="button" class="btn-ghost" id="summary-share">Teilen</button>
       <button type="button" class="btn-primary inline" id="summary-close">Stark! 💪</button>
     </div>
   </dialog>
